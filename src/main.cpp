@@ -329,7 +329,57 @@ public:
         }
         return true;
     }
-    
+
+  inline bool SDL_RectEmpty(const SDL_Rect *R) {
+    return R->w == 0 || R->h == 0;
+  }
+  void SDL_UnionRect(SDL_Rect *A, SDL_Rect *B, SDL_Rect *result)
+  {
+    int Amin, Amax, Bmin, Bmax;
+
+    /* Special cases for empty Rects */
+    if (SDL_RectEmpty(A)) {
+      if (SDL_RectEmpty(B)) {
+        /* A and B empty */
+        return;
+      } else {
+        /* A empty, B not empty */
+        *result = *B;
+        return;
+      }
+    } else {
+      if (SDL_RectEmpty(B)) {
+        /* A not empty, B empty */
+        *result = *A;
+        return;
+      }
+    }
+
+    /* Horizontal union */
+    Amin = A->x;
+    Amax = Amin + A->w;
+    Bmin = B->x;
+    Bmax = Bmin + B->w;
+    if (Bmin < Amin)
+      Amin = Bmin;
+    result->x = Amin;
+    if (Bmax > Amax)
+      Amax = Bmax;
+    result->w = Amax - Amin;
+
+    /* Vertical union */
+    Amin = A->y;
+    Amax = Amin + A->h;
+    Bmin = B->y;
+    Bmax = Bmin + B->h;
+    if (Bmin < Amin)
+      Amin = Bmin;
+    result->y = Amin;
+    if (Bmax > Amax)
+      Amax = Bmax;
+    result->h = Amax - Amin;
+  }
+  
     void update_texture()
     {
         if (dirty_rect.x >= display_width) {
@@ -413,29 +463,8 @@ public:
         if (y > display_height) y = display_height - 1;
         if (x + width > display_width) width = display_width - 1 - x;
         if (y + height > display_height) height = display_height - 1 - y;
-        
-        if (dirty_rect.w <= 0 || dirty_rect.h <= 0)
-        {
-            dirty_rect.x = x;
-            dirty_rect.y = y;
-            dirty_rect.w = width;
-            dirty_rect.h = height;
-        }
-        else
-        {
-            if (x < dirty_rect.x) {
-              dirty_rect.w = dirty_rect.w + (dirty_rect.x - x);
-              dirty_rect.x = x;
-            }
-            if (y < dirty_rect.y) {
-              dirty_rect.h = dirty_rect.h + (dirty_rect.y - y);
-              dirty_rect.y = y;
-            }
-            if (x + width < dirty_rect.x + dirty_rect.w)
-              dirty_rect.w = (width + x) - dirty_rect.x;
-            if (y + height < dirty_rect.y + dirty_rect.h)
-              dirty_rect.h = (height + y) - dirty_rect.y;
-        }
+        SDL_Rect this_rect = SDL_Rect { x, y, width, height };
+        SDL_UnionRect(&dirty_rect, &this_rect, &dirty_rect);
     }
     
 
@@ -779,8 +808,7 @@ public:
             check_scheduled_semaphore();
             interpreter.checkLowMemoryConditions();
             
-            for(int i = 0; i < vm_options.cycles_per_frame && !quit_signalled; i++)
-            {
+            for(int i = 0; i < vm_options.cycles_per_frame && !quit_signalled; i++) {
                 interpreter.cycle();
             }
             
@@ -900,18 +928,18 @@ extern "C" {
 #endif
     vm_options.three_buttons = false;
     vm_options.vsync = false;
-    vm_options.novsync_delay = 0;  // Try -delay 8 arg if your CPU is unhappy
-    vm_options.cycles_per_frame = 1800;
+    vm_options.novsync_delay = 8;  // Try -delay 8 arg if your CPU is unhappy
+    vm_options.cycles_per_frame = 10000;
     vm_options.display_scale = 1;
-    /*
-    if (!process_args(argc, argv, vm_options))
+#ifndef __WII__
+    if (!process_args(argc, (const char**)argv, vm_options))
     {
         std::cerr << "usage: " << argv[0] <<
             " -directory root-directory [-vsync] [-delay ms] [-cycles cycles-per-frame] [-2x] [-image snapshot]"
             << std::endl;
         exit(-1);
     }
-    */
+#endif
     VirtualMachine *vm = new VirtualMachine(vm_options);
     if (vm->init())
     {
