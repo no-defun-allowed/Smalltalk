@@ -942,8 +942,8 @@ extern "C" {
 #endif
     vm_options.three_buttons = false;
     vm_options.vsync = false;
-    vm_options.novsync_delay = 8;  // Try -delay 8 arg if your CPU is unhappy
-    vm_options.cycles_per_frame = 10000;
+    vm_options.novsync_delay = 15;  // Try -delay 8 arg if your CPU is unhappy
+    vm_options.cycles_per_frame = 50000;
     vm_options.display_scale = 1;
 #ifndef __WII__
     if (!process_args(argc, (const char**)argv, vm_options))
