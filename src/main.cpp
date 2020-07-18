@@ -305,8 +305,13 @@ public:
         {
             real_display_width = width;
             real_display_height = height;
+#ifdef __WII__
             display_width = 640;
             display_height = 480;
+#else
+            display_width = real_display_width;
+            display_height = real_display_height;
+#endif
             dirty_rect.x = 0;
             dirty_rect.y = 0;
             dirty_rect.w = width;
