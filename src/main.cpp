@@ -314,22 +314,25 @@ public:
 #endif
             dirty_rect.x = 0;
             dirty_rect.y = 0;
-            dirty_rect.w = width;
-            dirty_rect.h = height;
+            dirty_rect.w = display_width;
+            dirty_rect.h = display_height;
             
             if (window) {
+#ifndef __WII__
               window = SDL_SetVideoMode(vm_options.display_scale*display_width, vm_options.display_scale*display_height,
                                         16, SDL_SWSURFACE);
               SDL_FreeSurface(texture);
+#endif
             }
             else {
               window = SDL_SetVideoMode(vm_options.display_scale*display_width, vm_options.display_scale*display_height,
                                         16, SDL_SWSURFACE);
             }
-            
+#ifndef __WII__
             texture = SDL_CreateRGBSurface(SDL_SWSURFACE, display_width, display_height, 16,
                                            0b1111100000000000, 0b0000011111100000, 0b0000000000011111, 0);
             initialize_texture();
+#endif
             
         }
         return true;
@@ -517,11 +520,17 @@ public:
     
     bool init()
     {
+#ifdef __WII__
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0) {
+#else
         if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+#endif
           printf("Couldn't initialize SDL: %s", SDL_GetError());
           error("");
         }
-        
+#ifdef __WII__
+        SDL_JoystickOpen(0);
+#endif
         texture_needs_update = false;
         quit_signalled = false;
         return interpreter.init();
