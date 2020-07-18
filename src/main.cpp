@@ -53,7 +53,10 @@
 #include "posixfilesystem.h"
 #include "hal.h"
 #include <queue>
-
+#ifdef __WII__
+#include <fat.h>
+#endif
+#include <unistd.h>
 typedef std::uint16_t Pixel;
 // static const SDL_PixelFormat TextureFormat = SDL_PIXELFORMAT_RGB565;
 
@@ -218,8 +221,7 @@ public:
         if (!new_cursor)
         {
             printf("Create Cursor failed: %s", SDL_GetError());
-            abort();
-
+            error("");
         }
 
         return new_cursor;
@@ -280,7 +282,7 @@ public:
       int code = SDL_LockSurface(texture);
       if (code < 0) {
         printf("Couldn't LOCK SDL: %s", SDL_GetError());
-        return;
+        error("");
       }
       
       // There may be many frames before Smalltalk renders, so initialize the screen texture
@@ -330,6 +332,14 @@ public:
     
     void update_texture()
     {
+        if (dirty_rect.x >= display_width) {
+          dirty_rect.w = 0;
+          dirty_rect.x = display_width - 1;
+        }
+        if (dirty_rect.y >= display_height) {
+          dirty_rect.h = 0;
+          dirty_rect.y = display_height - 1;
+        }
         int source_word_left = dirty_rect.x / 16;
         int source_word_right = ( dirty_rect.x +  dirty_rect.w - 1) / 16;
         int display_width_words = (real_display_width + 15) / 16;
@@ -342,15 +352,13 @@ public:
         // a word boundary
         SDL_Rect update_rect;
         update_rect.x = source_word_left * 16;
-        if (update_rect.x > display_width) update_rect.x = display_width - 1;
         update_rect.y = dirty_rect.y;
-        if (update_rect.y > display_height) update_rect.y = display_height - 1;
         update_rect.w = update_word_width * 16;
         if (update_rect.w + update_rect.x > display_width) update_rect.w = display_width - 1 - update_rect.x;
         update_rect.h = dirty_rect.h;
         if (update_rect.h + update_rect.y > display_height) update_rect.h = display_height - 1 - update_rect.y;
         // printf("%d %d %d %d\n", update_rect.x, update_rect.y, update_rect.w, update_rect.h);
-        int displayBitmap = interpreter.getDisplayBits(display_width, display_height);
+        int displayBitmap = interpreter.getDisplayBits(real_display_width, real_display_height);
         
         if (displayBitmap == 0) return; // bail
         
@@ -359,7 +367,7 @@ public:
         int code = SDL_LockSurface(texture);
         if (code < 0) {
             printf("Couldn't LOCK SDL: %s", SDL_GetError());
-            return;
+            error("");
         }
         std::uint8_t* image = (std::uint8_t*)texture->pixels;
         std::uint8_t* dest_row = &image[dest_pitch * update_rect.y + update_rect.x * 2];
@@ -415,9 +423,14 @@ public:
         }
         else
         {
-            SDL_Rect update_rect {x, y, width, height};
-            if (x < dirty_rect.x) dirty_rect.x = x;
-            if (y < dirty_rect.y) dirty_rect.y = y;
+            if (x < dirty_rect.x) {
+              dirty_rect.w = dirty_rect.w + (dirty_rect.x - x);
+              dirty_rect.x = x;
+            }
+            if (y < dirty_rect.y) {
+              dirty_rect.h = dirty_rect.h + (dirty_rect.y - y);
+              dirty_rect.y = y;
+            }
             if (x + width < dirty_rect.x + dirty_rect.w)
               dirty_rect.w = (width + x) - dirty_rect.x;
             if (y + height < dirty_rect.y + dirty_rect.h)
@@ -430,6 +443,7 @@ public:
     void error(const char *message)
     {
         std::cerr << message << std::endl;
+        sleep(5);
         abort();
     }
     
@@ -471,7 +485,7 @@ public:
     {
         if (SDL_Init(SDL_INIT_VIDEO) < 0) {
           printf("Couldn't initialize SDL: %s", SDL_GetError());
-          return false;
+          error("");
         }
         
         texture_needs_update = false;
@@ -879,7 +893,8 @@ extern "C" {
     
     vm_options.snapshot_name = "snapshot.im";
 #ifdef __WII__
-    vm_options.root_directory = "/";
+    vm_options.root_directory = "sd:/";
+    fatInitDefault();
 #else
     vm_options.root_directory = ".";
 #endif
