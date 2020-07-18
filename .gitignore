@@ -29,3 +29,8 @@
 *.exe
 *.out
 *.app
+*.dol
+*.elf
+
+# Wii build directory
+build/*

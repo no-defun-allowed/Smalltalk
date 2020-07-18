@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1.0">
+  <name>Smalltalk-80</name>
+  <coder>Dan Banay, Mario Volczko, Xerox et al</coder>
+  <version>1.0</version>
+  <release_date>18 July 2020</release_date>
+  <short_description>Smalltalk 80 implementation</short_description>
+  <long_description>A port of Banay's Smalltalk implementation, derived from the Blue Book</long_description>
+</app>

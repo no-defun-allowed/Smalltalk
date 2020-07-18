@@ -5,7 +5,7 @@ SRC := ../src
 OBJS := objmemory.o bitblt.o main.o interpreter.o
 
 Smalltalk: $(OBJS) 
-	$(CC) -o $@ $^ -L/usr/local/lib -lSDL2main -lSDL2
+	$(CC) -o $@ $^ -L/usr/local/lib -lSDL -lSDLmain
 	
 main.o: $(SRC)/main.cpp
 	$(CC) $(CFLAGS) -c $(SRC)/main.cpp

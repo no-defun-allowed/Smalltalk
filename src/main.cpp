@@ -40,22 +40,22 @@
 #include <fstream>
 #include <sstream>
 #include <cassert>
+#include <cstring>
 #include <stdlib.h>
 #include <time.h>
 #ifdef _WIN32
 #define SDL_MAIN_HANDLED
 #include "SDL.h"
 #else
-#include "SDL2/SDL.h"
+#include <SDL/SDL.h>
 #endif
 #include "interpreter.h"
 #include "posixfilesystem.h"
 #include "hal.h"
 #include <queue>
 
-
 typedef std::uint16_t Pixel;
-static const SDL_PixelFormatEnum TextureFormat = SDL_PIXELFORMAT_RGB565;
+// static const SDL_PixelFormat TextureFormat = SDL_PIXELFORMAT_RGB565;
 
 
 static inline void expand_pixel(Pixel *destPixel, std::uint16_t srcWord, int srcBit)
@@ -82,13 +82,10 @@ public:
         vm_options(vm_options),
         fileSystem(vm_options.root_directory),
         interpreter(this, &fileSystem),
-        window(0), renderer(0), texture(0),
-#ifdef SOFTWARE_MOUSE_CURSOR
-        mouse_texture(0),
-#else
-        cursor(0),
-#endif
+        window(0), texture(0),
+        cursor(0), last_x(0), last_y(0),
         display_width(0), display_height(0),
+        real_display_width(0), real_display_height(0),
         scheduled_semaphore(0), input_semaphore(0), scheduled_time(0),
         event_count(0), last_event_time(0),
         quit_signalled(false), texture_needs_update(false),
@@ -98,6 +95,7 @@ public:
     
     ~VirtualMachine()
     {
+      /*
 #ifdef SOFTWARE_MOUSE_CURSOR
         if (mouse_texture)
             SDL_DestroyTexture(mouse_texture);
@@ -112,6 +110,7 @@ public:
             SDL_DestroyRenderer(renderer);
         if (window)
             SDL_DestroyWindow(window);
+      */
     }
     
   
@@ -137,13 +136,11 @@ public:
         return SDL_GetTicks();
     }
     
-    void check_scheduled_semaphore()
-    {
-        if( scheduled_semaphore && SDL_TICKS_PASSED(SDL_GetTicks(), scheduled_time))
-        {
-            interpreter.asynchronousSignal(scheduled_semaphore);
-            scheduled_semaphore = 0;
-        }
+    void check_scheduled_semaphore() {
+      if (scheduled_semaphore && SDL_GetTicks() > scheduled_time) {
+        interpreter.asynchronousSignal(scheduled_semaphore);
+        scheduled_semaphore = 0;
+      }
     }
 
     // Schedule a semaphore to be signaled at a time. Only one outstanding
@@ -161,7 +158,7 @@ public:
         }
     }
     
-    SDL_Cursor *create_cursor(const Uint8* cursor_bits)
+    SDL_Cursor *create_cursor(Uint8* cursor_bits)
     {
         // Maps a nibble to a byte where each bit is repeated
         // e.g. 1010 -> 11001100
@@ -191,7 +188,7 @@ public:
 
         if (vm_options.display_scale == 1)
         {
-            new_cursor = SDL_CreateCursor((const Uint8 *) cursor_bits, (const Uint8 *) cursor_bits, 16, 16, 0, 0);
+            new_cursor = SDL_CreateCursor(cursor_bits, cursor_bits, 16, 16, 0, 0);
 
         }
         else if (vm_options.display_scale == 2)
@@ -216,63 +213,22 @@ public:
                 src += 2;
             }
             
-            new_cursor = SDL_CreateCursor((const Uint8 *) image, (const Uint8 *) image, 32, 32, 0, 0);
+            new_cursor = SDL_CreateCursor(image, image, 32, 32, 0, 0);
         }
         if (!new_cursor)
         {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Create Cursor failed: %s", SDL_GetError());
+            printf("Create Cursor failed: %s", SDL_GetError());
+            abort();
 
         }
 
         return new_cursor;
     }
     
-#ifdef SOFTWARE_MOUSE_CURSOR
-    void update_mouse_cursor(const std::uint16_t* cursor_bits)
-    {
-        int dest_pitch;
-        std::uint8_t* pixels;
-        
-        int code = SDL_LockTexture(mouse_texture, 0, (void **)&pixels,  &dest_pitch);
-        if (code < 0)
-        {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't LOCK MOUSE TEXTURE SDL: %s", SDL_GetError());
-            return;
-        }
-        
-        std::uint8_t* dest_row = pixels;
-        std::uint16_t* source_pixel = (std::uint16_t *) cursor_bits;
-        for(int h = 0; h < 16; h++)
-        {
-            std::uint16_t* dest_pixel = (Pixel *) dest_row;
-            for(int b = 15; b >= 0; b--)
-            {
-                // Low order bit of a 5551 pixel is alpha
-                *dest_pixel = (*source_pixel & (1 << b)) != 0;
-                dest_pixel++;
-            }
-            source_pixel++;
-            dest_row += dest_pitch;
-
-        }
-        SDL_UnlockTexture(mouse_texture);
-    }
-#endif
-    
     // Set the cursor image
     // (a 16 word form)
     void set_cursor_image(std::uint16_t *image)
     {
-#ifdef SOFTWARE_MOUSE_CURSOR
-        
-        if (!mouse_texture)
-        {
-            mouse_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA5551, SDL_TEXTUREACCESS_STREAMING, 16, 16);
-            SDL_SetTextureBlendMode(mouse_texture, SDL_BLENDMODE_BLEND);
-        }
-
-        update_mouse_cursor(image);
-#else
         std::uint16_t cursor_bits[16];
 
         // SDL uses a MSB format, so swap the bytes
@@ -283,7 +239,7 @@ public:
         
         SDL_Cursor* old_cursor = cursor;
 
-        cursor = create_cursor((const Uint8 *) cursor_bits);
+        cursor = create_cursor((Uint8*) cursor_bits);
 
         SDL_SetCursor(cursor);
 
@@ -291,21 +247,24 @@ public:
         {
             SDL_FreeCursor(old_cursor);
         }
-#endif
 
     }
     
     // Set the mouse cursor location
     void set_cursor_location(int x, int y)
     {
-        SDL_WarpMouseInWindow(window, x * vm_options.display_scale, y * vm_options.display_scale);
+        SDL_WarpMouse(x * vm_options.display_scale, y * vm_options.display_scale);
     }
-    
+
     void get_cursor_location(int *x, int *y)
     {
+      /*
         SDL_GetMouseState(x, y);
         *x = *x / vm_options.display_scale;
         *y = *y / vm_options.display_scale;
+        */
+      *x = last_x;
+      *y = last_y;
     }
     
     void set_link_cursor(bool link)
@@ -315,63 +274,54 @@ public:
     
     void initialize_texture()
     {
-        std::uint8_t* dest_row;
-        int dest_pitch;
+      std::uint8_t* dest_row = (std::uint8_t*)texture->pixels;
+      int dest_pitch = texture->pitch;
+      
+      int code = SDL_LockSurface(texture);
+      if (code < 0) {
+        printf("Couldn't LOCK SDL: %s", SDL_GetError());
+        return;
+      }
+      
+      // There may be many frames before Smalltalk renders, so initialize the screen texture
+      // with something that looks like the Smalltalk desktop pattern
+      for(int h = 0; h < display_height; h++) {
+        Pixel* dest_pixel = (Pixel *) dest_row;
         
-        int code = SDL_LockTexture(texture, 0, (void **)&dest_row,  &dest_pitch);
-        if (code < 0)
-        {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't LOCK SDL: %s", SDL_GetError());
-            return;
+        for(int i = 0; i < display_width; i++) {
+          *dest_pixel++ = (h & 1) ^ (i & 1) ? 0 : ~0;
         }
-        
-        // There may be many frames before Smalltalk renders, so initialize the screen texture
-        // with something that looks like the Smalltalk desktop pattern
-        for(int h = 0; h < display_height; h++)
-        {
-            Pixel* dest_pixel = (Pixel *) dest_row;
-            
-            for(int i = 0; i < display_width; i++)
-            {
-                *dest_pixel++ = (h & 1) ^ (i & 1) ? 0 : ~0;
-            }
-            dest_row += dest_pitch;
-        }
-        SDL_UnlockTexture(texture);
+        dest_row += dest_pitch;
+      }
+      SDL_UnlockSurface(texture);
     }
     
     bool set_display_size(int width, int height)
     {
-        if (display_width != width || display_height != height)
+      printf("%d %d\n", width, height);
+        if (real_display_width != width || real_display_height != height)
         {
-            display_width = width;
-            display_height = height;
+            real_display_width = width;
+            real_display_height = height;
+            display_width = 640;
+            display_height = 480;
             dirty_rect.x = 0;
             dirty_rect.y = 0;
             dirty_rect.w = width;
             dirty_rect.h = height;
             
-            if (window)
-            {
-                SDL_SetWindowSize(window, vm_options.display_scale*display_width, vm_options.display_scale*display_height);
-                SDL_DestroyTexture(texture);
+            if (window) {
+              window = SDL_SetVideoMode(vm_options.display_scale*display_width, vm_options.display_scale*display_height,
+                                        16, SDL_SWSURFACE);
+              SDL_FreeSurface(texture);
             }
-            else
-            {
-                window = SDL_CreateWindow("Smalltalk-80",
-                                          SDL_WINDOWPOS_UNDEFINED,
-                                          SDL_WINDOWPOS_UNDEFINED,
-                                          vm_options.display_scale*display_width, vm_options.display_scale*display_height,
-                                          0);
-                
-                Uint32 flags = SDL_RENDERER_ACCELERATED | (vm_options.vsync ? SDL_RENDERER_PRESENTVSYNC : 0);
-                
-                renderer = SDL_CreateRenderer(window, -1, flags );
-                
-
+            else {
+              window = SDL_SetVideoMode(vm_options.display_scale*display_width, vm_options.display_scale*display_height,
+                                        16, SDL_SWSURFACE);
             }
             
-            texture = SDL_CreateTexture(renderer, TextureFormat, SDL_TEXTUREACCESS_STREAMING, display_width, display_height);
+            texture = SDL_CreateRGBSurface(SDL_SWSURFACE, display_width, display_height, 16,
+                                           0b1111100000000000, 0b0000011111100000, 0b0000000000011111, 0);
             initialize_texture();
             
         }
@@ -382,7 +332,7 @@ public:
     {
         int source_word_left = dirty_rect.x / 16;
         int source_word_right = ( dirty_rect.x +  dirty_rect.w - 1) / 16;
-        int display_width_words = (display_width + 15) / 16;
+        int display_width_words = (real_display_width + 15) / 16;
         
         int source_index_row = source_word_left + (dirty_rect.y * display_width_words);
         int update_word_width =  source_word_right - source_word_left + 1;
@@ -392,25 +342,27 @@ public:
         // a word boundary
         SDL_Rect update_rect;
         update_rect.x = source_word_left * 16;
+        if (update_rect.x > display_width) update_rect.x = display_width - 1;
         update_rect.y = dirty_rect.y;
+        if (update_rect.y > display_height) update_rect.y = display_height - 1;
         update_rect.w = update_word_width * 16;
+        if (update_rect.w + update_rect.x > display_width) update_rect.w = display_width - 1 - update_rect.x;
         update_rect.h = dirty_rect.h;
-        
+        if (update_rect.h + update_rect.y > display_height) update_rect.h = display_height - 1 - update_rect.y;
+        // printf("%d %d %d %d\n", update_rect.x, update_rect.y, update_rect.w, update_rect.h);
         int displayBitmap = interpreter.getDisplayBits(display_width, display_height);
         
         if (displayBitmap == 0) return; // bail
         
         std::uint8_t* pixels;
-        int dest_pitch;
-        int code = SDL_LockTexture(texture, &update_rect, (void **)&pixels,  &dest_pitch);
-        if (code < 0)
-        {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't LOCK SDL: %s", SDL_GetError());
+        int dest_pitch = texture->pitch;
+        int code = SDL_LockSurface(texture);
+        if (code < 0) {
+            printf("Couldn't LOCK SDL: %s", SDL_GetError());
             return;
         }
-        
-        std::uint8_t* dest_row = pixels;
-        
+        std::uint8_t* image = (std::uint8_t*)texture->pixels;
+        std::uint8_t* dest_row = &image[dest_pitch * update_rect.y + update_rect.x * 2];
         
         for(int h = 0; h < update_rect.h; h++)
         {
@@ -442,19 +394,19 @@ public:
             source_index_row += display_width_words;
         }
         
-        SDL_UnlockTexture(texture);
+        SDL_UnlockSurface(texture);
     }
 
     
     void display_changed(int x, int y, int width, int height)
     {
         texture_needs_update = true;
-        assert(x >= 0 && x < display_width);
-        assert(y >= 0 && y < display_height);
-        assert(x + width <= display_width);
-        assert(y + height <= display_height);
+        if (x > display_width)  x = display_width - 1;
+        if (y > display_height) y = display_height - 1;
+        if (x + width > display_width) width = display_width - 1 - x;
+        if (y + height > display_height) height = display_height - 1 - y;
         
-        if (SDL_RectEmpty(&dirty_rect))
+        if (dirty_rect.w <= 0 || dirty_rect.h <= 0)
         {
             dirty_rect.x = x;
             dirty_rect.y = y;
@@ -464,7 +416,12 @@ public:
         else
         {
             SDL_Rect update_rect {x, y, width, height};
-            SDL_UnionRect(&dirty_rect, &update_rect, &dirty_rect);
+            if (x < dirty_rect.x) dirty_rect.x = x;
+            if (y < dirty_rect.y) dirty_rect.y = y;
+            if (x + width < dirty_rect.x + dirty_rect.w)
+              dirty_rect.w = (width + x) - dirty_rect.x;
+            if (y + height < dirty_rect.y + dirty_rect.h)
+              dirty_rect.h = (height + y) - dirty_rect.y;
         }
     }
     
@@ -512,17 +469,10 @@ public:
     
     bool init()
     {
-        if (SDL_Init(SDL_INIT_VIDEO) < 0)
-        {
-            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Couldn't initialize SDL: %s", SDL_GetError());
-            return false;
+        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+          printf("Couldn't initialize SDL: %s", SDL_GetError());
+          return false;
         }
-        
-#ifdef SOFTWARE_MOUSE_CURSOR
-        SDL_ShowCursor(0); // We show our own...
-        
-#endif
-
         
         texture_needs_update = false;
         quit_signalled = false;
@@ -534,7 +484,7 @@ public:
         assert(input_semaphore);
         input_queue.push(word);
         interpreter.asynchronousSignal(input_semaphore);
-}
+    }
     
     void queue_input_word(std::uint16_t type, std::uint16_t parameter)
     {
@@ -572,24 +522,6 @@ public:
         last_event_time = now;
     }
    
-#if 0
-    void paste_clipboard()
-    {
-
-        if (SDL_HasClipboardText())
-        {
-            queue_input_time_words();
-            for(const char *text = SDL_GetClipboardText(); *text; text++)
-            {
-                int ch = *text;
-                if (ch == '\n') ch = '\r';
-                queue_input_word(3, ch);
-                queue_input_word(4, ch);
-            }
-        }
-    }
-#endif
-    
     /*
      decoded keyboard:
      
@@ -633,14 +565,6 @@ public:
          backspace 8 tab 9 line feed 10 return 13 escape 27 space 32 delete 127
 
          */
-#if 0
-        if (key.keysym.scancode == SDL_SCANCODE_V && key.keysym.mod == KMOD_LGUI)
-        {
-            if (type == 3)
-                paste_clipboard();
-            return;
-        }
-#endif
 
         // My initial plan was to use go unencoded for everything, but
         // when I pressed shift 6, I saw a ~ appear!. It turns out the
@@ -649,11 +573,13 @@ public:
         
         switch (key.keysym.scancode)
         {
+          /*
             case SDL_SCANCODE_LCTRL:
             case SDL_SCANCODE_RCTRL:
                 param = 138; break;
             case SDL_SCANCODE_CAPSLOCK: param = 139; break;
             case SDL_SCANCODE_DELETE:   param = 127; break;
+          */
             default:
                 if (key.keysym.sym > 127)
                     return;  // Must be ascii
@@ -665,8 +591,8 @@ public:
         {
             if (type == 3)
             {
-                if (key.keysym.mod & (KMOD_LGUI|KMOD_RGUI))
-                    return; // Ignore
+              /* if (key.keysym.mod & (KMOD_LGUI|KMOD_RGUI))
+                 return; // Ignore */
 
                 if (key.keysym.mod & (KMOD_LSHIFT|KMOD_RSHIFT))
                     param = shift_map[param];
@@ -784,40 +710,27 @@ public:
         queue_input_word(1, (std::uint16_t) motion.x);
         queue_input_time_words();
         queue_input_word(1, (std::uint16_t) motion.y);
+        last_x = motion.x;
+        last_y = motion.y;
     }
 
     
     void render()
     {
-        if (renderer)
-        {
-            if (texture_needs_update)
-            {
-                update_texture();
-                texture_needs_update = false;
-            }
-           // SDL_RenderClear(renderer);
-            if (texture)
-                SDL_RenderCopy(renderer, texture, NULL, NULL);
-            
-#ifdef SOFTWARE_MOUSE_CURSOR
-                if (mouse_texture)
-                {
-                    static SDL_Rect mouse_src_rect{0,0,16,16};
-                    int mouseX, mouseY;
-                    SDL_GetMouseState(&mouseX, &mouseY);
-
-                    SDL_Rect dst = {mouseX, mouseY, 16*vm_options.display_scale, 16*vm_options.display_scale};
-                    SDL_RenderCopy(renderer, mouse_texture, &mouse_src_rect, &dst);
-                }
-#endif
-            
-            SDL_RenderPresent(renderer);
-            dirty_rect.x = 0;
-            dirty_rect.y = 0;
-            dirty_rect.w = 0;
-            dirty_rect.h = 0;
-        }
+      if (texture_needs_update) {
+        update_texture();
+        texture_needs_update = false;
+      }
+      // SDL_RenderClear(renderer);
+      if (texture)
+        SDL_BlitSurface(texture, NULL, window, NULL);
+      
+      // SDL_RenderPresent(renderer);
+      dirty_rect.x = 0;
+      dirty_rect.y = 0;
+      dirty_rect.w = 0;
+      dirty_rect.h = 0;
+      SDL_UpdateRect(window, 0, 0, 0, 0);
     }
     
     void process_events()
@@ -870,17 +783,12 @@ public:
 
     PosixST80FileSystem fileSystem;
 
-    SDL_Window *window;
-    SDL_Renderer *renderer;
-    SDL_Texture *texture;
-    
-    
-#ifdef SOFTWARE_MOUSE_CURSOR
-    SDL_Texture *mouse_texture;
-#else
+    SDL_Surface *window;
+    SDL_Surface *texture;
+
     SDL_Cursor *cursor;
-#endif
-    
+    int last_x = 0;
+    int last_y = 0;
     Interpreter interpreter;
 
     
@@ -894,6 +802,7 @@ public:
 
     bool texture_needs_update;
     int display_width, display_height;
+    int real_display_width, real_display_height;
     
     SDL_Rect dirty_rect;
     
@@ -963,17 +872,23 @@ static bool process_args(int argc, const char *argv[], struct options &options)
     return options.root_directory.size() > 0;
 }
 
-int main(int argc, const char * argv[]) {
-
+extern "C" {
+  int main(int argc, char* argv[]) {
+    
     struct options vm_options;
     
     vm_options.snapshot_name = "snapshot.im";
+#ifdef __WII__
+    vm_options.root_directory = "/";
+#else
+    vm_options.root_directory = ".";
+#endif
     vm_options.three_buttons = false;
     vm_options.vsync = false;
     vm_options.novsync_delay = 0;  // Try -delay 8 arg if your CPU is unhappy
     vm_options.cycles_per_frame = 1800;
     vm_options.display_scale = 1;
- 
+    /*
     if (!process_args(argc, argv, vm_options))
     {
         std::cerr << "usage: " << argv[0] <<
@@ -981,7 +896,7 @@ int main(int argc, const char * argv[]) {
             << std::endl;
         exit(-1);
     }
-    
+    */
     VirtualMachine *vm = new VirtualMachine(vm_options);
     if (vm->init())
     {
@@ -994,4 +909,5 @@ int main(int argc, const char * argv[]) {
     delete vm;
 
     return 0;
+  }
 }
