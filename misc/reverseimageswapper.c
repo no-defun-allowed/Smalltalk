@@ -26,6 +26,7 @@
 #define LargePositiveInteger 0x1C
 #define LargeNegativeInteger 0x1DA0
 #define WordArrayClass 0xA72
+#define ArrayClass 0x10
 
 
 
@@ -72,12 +73,13 @@ uint32_t read_uint32(FILE *f)
 {
     uint32_t v;
     size_t len = fread(&v, sizeof(v), 1, f);
-    return swap32(v);
+    return v;
 }
 
 void write_uint32(FILE *f, uint32_t v)
 {
-    fwrite(&v, sizeof(v), 1, f);
+  v = swap32(v);
+  fwrite(&v, sizeof(v), 1, f);
  }
 
 
@@ -85,12 +87,13 @@ uint16_t read_uint16(FILE *f)
 {
     uint16_t v;
     fread(&v, sizeof(v), 1, f);
-    return swap16(v);
+    return v;
 }
 
 void write_uint16(FILE *f, uint16_t v)
 {
-    fwrite(&v, sizeof(v), 1, f);
+  v = swap16(v);
+  fwrite(&v, sizeof(v), 1, f);
 }
 
 
@@ -157,25 +160,26 @@ int main(int argc, const char * argv[]) {
         
         if (!is_free)
         {
-            uint16_t size = swap16(word_object_memory[location]);
-            uint16_t class = swap16(word_object_memory[location+1]);
+            uint16_t size = word_object_memory[location];
+            uint16_t class = word_object_memory[location+1];            
+            printf("Size: %d Class: %d\n", size, class);
             int fields = size - 2;
 
             objectsLoaded++;
             
             
-            word_object_memory[location]   = size;
-            word_object_memory[location+1] = class;
+            word_object_memory[location]   = swap16(size);
+            word_object_memory[location+1] = swap16(class);
             
             
             if (class == CompiledMethod)
             {
-                uint16_t header = swap16(word_object_memory[location+2]);
-                uint16_t literal_count = (header & 0x7E) >> 1;
+              uint16_t header = word_object_memory[location+2];
+              uint16_t literal_count = (header & 0x7E) >> 1;
 
                 assert(header & 1);
                 // Swap header/literal fields
-                word_object_memory[location+2] = header;
+                word_object_memory[location+2] = swap16(header);
                 for(int j = 0; j < literal_count; j++)
                 {
                     word_object_memory[location+3+j] = swap16(word_object_memory[location+3+j]);
@@ -186,7 +190,7 @@ int main(int argc, const char * argv[]) {
             {
                 uint8_t temp[4];
                 uint8_t *bytes = (uint8_t *) &word_object_memory[location+2];
-                 
+                printf("Float %f\n", * (float *) bytes);
                 temp[0] = bytes[3];
                 temp[1] = bytes[2];
                 temp[2] = bytes[1];
@@ -198,15 +202,14 @@ int main(int argc, const char * argv[]) {
                 bytes[3] = temp[3];
                 
                 
-                printf("Float %f\n", * (float *) bytes);
+                
 
             }
-            else if (ptr || class == DisplayBitmap || class == WordArrayClass)
+            else if (ptr || class == DisplayBitmap || class == WordArrayClass || class == ArrayClass)
             {
                 // Swap all fields
-                for(int f = 0; f < fields; f++)
-                {
-                    word_object_memory[location+2+f] = swap16(word_object_memory[location+2+f]);
+                for(int f = 0; f < fields; f++) {
+                  word_object_memory[location+2+f] = swap16(word_object_memory[location+2+f]);
                 }
             }
 
@@ -230,11 +233,7 @@ int main(int argc, const char * argv[]) {
          SIZE = N + 2     (2 for size/class "header")  size is in 16-bits words.
          CLASS Oop
          N FIELDS (each is 16 bits)
-         */
-        
-        uint16_t size = swap16(word_object_memory[location]);
-        uint16_t class = swap16(word_object_memory[location+1]);
-        int fields = size - 2;
+        */
         
         i += 2;
     }
@@ -258,7 +257,7 @@ int main(int argc, const char * argv[]) {
 
     pg = ftell(output);
     for(int i = 0; i < object_table_length; i++)
-        write_uint16(output, object_table[i]);
+      write_uint16(output, object_table[i]);
 
 
 

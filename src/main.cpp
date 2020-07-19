@@ -253,9 +253,9 @@ public:
     }
     
     // Set the mouse cursor location
-    void set_cursor_location(int x, int y)
-    {
-        SDL_WarpMouse(x * vm_options.display_scale, y * vm_options.display_scale);
+    void set_cursor_location(int x, int y) {
+      // lol no
+      // SDL_WarpMouse(x * vm_options.display_scale, y * vm_options.display_scale);
     }
 
     void get_cursor_location(int *x, int *y)
@@ -318,21 +318,24 @@ public:
             dirty_rect.h = display_height;
             
             if (window) {
+              // Don't replace the window on the Wii.
 #ifndef __WII__
               window = SDL_SetVideoMode(vm_options.display_scale*display_width, vm_options.display_scale*display_height,
                                         16, SDL_SWSURFACE);
               SDL_FreeSurface(texture);
-#endif
+              texture = SDL_CreateRGBSurface(SDL_SWSURFACE, display_width, display_height, 16,
+                                             0b1111100000000000, 0b0000011111100000, 0b0000000000011111, 0);
+#endif              
+              initialize_texture();
             }
             else {
               window = SDL_SetVideoMode(vm_options.display_scale*display_width, vm_options.display_scale*display_height,
                                         16, SDL_SWSURFACE);
+              SDL_FreeSurface(texture);
+              texture = SDL_CreateRGBSurface(SDL_SWSURFACE, display_width, display_height, 16,
+                                             0b1111100000000000, 0b0000011111100000, 0b0000000000011111, 0);
+              initialize_texture();
             }
-#ifndef __WII__
-            texture = SDL_CreateRGBSurface(SDL_SWSURFACE, display_width, display_height, 16,
-                                           0b1111100000000000, 0b0000011111100000, 0b0000000000011111, 0);
-            initialize_texture();
-#endif
             
         }
         return true;
@@ -390,14 +393,14 @@ public:
   
     void update_texture()
     {
-        if (dirty_rect.x >= display_width) {
-          dirty_rect.w = 0;
-          dirty_rect.x = display_width - 1;
-        }
-        if (dirty_rect.y >= display_height) {
-          dirty_rect.h = 0;
-          dirty_rect.y = display_height - 1;
-        }
+        if (dirty_rect.x >= display_width)
+          return;
+        if (dirty_rect.y >= display_height)
+          return;
+        if (dirty_rect.w + dirty_rect.x >= display_width)
+          dirty_rect.w = display_width - dirty_rect.x;
+        if (dirty_rect.h + dirty_rect.y >= display_height)
+          dirty_rect.h = display_height - dirty_rect.y;
         int source_word_left = dirty_rect.x / 16;
         int source_word_right = ( dirty_rect.x +  dirty_rect.w - 1) / 16;
         int display_width_words = (real_display_width + 15) / 16;
@@ -415,12 +418,11 @@ public:
         if (update_rect.w + update_rect.x > display_width) update_rect.w = display_width - 1 - update_rect.x;
         update_rect.h = dirty_rect.h;
         if (update_rect.h + update_rect.y > display_height) update_rect.h = display_height - 1 - update_rect.y;
-        // printf("%d %d %d %d\n", update_rect.x, update_rect.y, update_rect.w, update_rect.h);
         int displayBitmap = interpreter.getDisplayBits(real_display_width, real_display_height);
         
         if (displayBitmap == 0) return; // bail
+        if (texture == nullptr) return;
         
-        std::uint8_t* pixels;
         int dest_pitch = texture->pitch;
         int code = SDL_LockSurface(texture);
         if (code < 0) {
@@ -466,22 +468,28 @@ public:
     
     void display_changed(int x, int y, int width, int height)
     {
-        texture_needs_update = true;
-        if (x > display_width)  x = display_width - 1;
-        if (y > display_height) y = display_height - 1;
-        if (x + width > display_width) width = display_width - 1 - x;
-        if (y + height > display_height) height = display_height - 1 - y;
-        SDL_Rect this_rect = SDL_Rect { x, y, width, height };
-        SDL_UnionRect(&dirty_rect, &this_rect, &dirty_rect);
+      if (x > display_width)  return;
+      if (y > display_height) return;
+      if (x + width > display_width) width = display_width - x;
+      if (y + height > display_height) height = display_height - y;
+      texture_needs_update = true;
+      SDL_Rect this_rect = SDL_Rect { x, y, width, height };
+      SDL_UnionRect(&dirty_rect, &this_rect, &dirty_rect);
     }
     
 
     
     void error(const char *message)
     {
-        std::cerr << message << std::endl;
-        sleep(5);
-        abort();
+      puts(message);
+#ifdef __WII__
+      sleep(5);
+      for (int x = 0; x < 1000; x++)
+        puts(message);
+      abort();
+#else
+      abort();
+#endif
     }
     
     //Input queue
@@ -778,11 +786,8 @@ public:
         update_texture();
         texture_needs_update = false;
       }
-      // SDL_RenderClear(renderer);
       if (texture)
         SDL_BlitSurface(texture, NULL, window, NULL);
-      
-      // SDL_RenderPresent(renderer);
       dirty_rect.x = 0;
       dirty_rect.y = 0;
       dirty_rect.w = 0;
@@ -942,8 +947,8 @@ extern "C" {
 #endif
     vm_options.three_buttons = false;
     vm_options.vsync = false;
-    vm_options.novsync_delay = 15;  // Try -delay 8 arg if your CPU is unhappy
-    vm_options.cycles_per_frame = 50000;
+    vm_options.novsync_delay = 0;  // Try -delay 8 arg if your CPU is unhappy
+    vm_options.cycles_per_frame = 5000;
     vm_options.display_scale = 1;
 #ifndef __WII__
     if (!process_args(argc, (const char**)argv, vm_options))

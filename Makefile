@@ -45,7 +45,7 @@ LIBS	:=	-lSDL -lwiiuse -lbte -lasnd -lfat -logc -lm -lwiikeyboard
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:= /opt/devkitpro/portlibs/wii/include/SDL/
+LIBDIRS	:= /opt/devkitpro/portlibs/wii/
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional

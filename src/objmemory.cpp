@@ -27,6 +27,7 @@
 
 
 #include <cstdint>
+#include <cstdio>
 #include <algorithm>
 #include "objmemory.h"
 #include "oops.h"
@@ -466,8 +467,9 @@ void ObjectMemory::compactCurrentSegment()
 // Force a garbage collection
 void ObjectMemory::garbageCollect()
 {
+  printf("GC!\n");
 #ifdef GC_MARK_SWEEP
-    reclaimInaccessibleObjects();
+  reclaimInaccessibleObjects();
 #endif
 }
 
@@ -647,7 +649,6 @@ void ObjectMemory::markAccessibleObjects()
 
 void ObjectMemory::outOfMemoryError()
 {
-    assert(0);
     hal->error("Out of memory");
 }
 

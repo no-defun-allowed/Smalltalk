@@ -117,4 +117,3 @@ private:
     std::uint16_t memory[SegmentCount][SegmentSize];
     
 };
-
