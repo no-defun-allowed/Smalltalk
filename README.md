@@ -1,5 +1,6 @@
 ﻿# Smalltalk-80
 ![Screenshot](images/desktop.png)
+![Screenshot from a Wii and CRT TV](images/wii-smalltalk.jpeg)
 
 Welcome to my "by the Bluebook" C++ implementation of the Smalltalk-80 system that runs on OS X, Windows, and Linux! Since first reading about Smalltalk in the August 1981 issue of Byte magazine, I have always been intrigued by it. At that time all we had were slow 8-bit computers with 4K of RAM barely running fast enough to do anything useful. I was stunned as I read through the article -- this was futuristic alien technology that was surely beyond my reach. In 1988, while attending the University of Washington,  I was exposed to two memorable pieces of technology: The first was Steve Job's NeXTCube and the other was a Tektronix 4404 workstation running Smalltalk-80. Both were, and still are, amazing. It was only fitting that I implemented this Smalltalk on a descendent of the NeXTCube -- a MacBook Pro laptop.
 
@@ -58,8 +59,24 @@ You should then be able to do:
 See the command line options section below for what this means. 
 
 
+# Wii
+
+Use the `be-snapshot.im` image, or flip a little endian image (again!) using 
+`misc/reverseimageswapper.c`. Currently, floats are represented weirdly on the
+Wii (as the component words are stored in little-endian order, but the words
+in themselves big-endian), so using an original Alto image will not work. I 
+tried to fix that, but it didn't work for whatever reason, and I'll just have 
+to try again later.
+
+Invoke `make` in the top level directory. Copy the resultant `Smalltalk-wii.dol`
+as `boot.dol`, and `meta.xml` and `icon.png` into `apps/smalltalk/` on a SD 
+card, and `files/be-snapshot.im` (or your own image), with 
+`Smalltalk-80.changes` and `Smalltalk-80.sources` into the toplevel directory
+of the SD card.
+
 ## Configuration options
-The behavior of the Smalltalk application can be customized through `#define` settings in the header file for each module.
+The behavior of the Smalltalk application can be customized through `#define`
+settings in the header file for each module.
 
 ### Object Memory (objmemory.h) `#defines` 
 The Object Memory `#defines` determines the garbage collection scheme to be used (all the approaches described in the Bluebook are available).
