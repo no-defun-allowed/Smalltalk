@@ -5481,9 +5481,10 @@ void Interpreter::pushFloat(float f)
 {
     std::uint32_t uint32 = *(std::uint32_t *) &f;
     int objectPointer = memory.instantiateClass_withWords(ClassFloatPointer, 2);
+    // Write the float in big endian on a big endian machine.
+    // Without this, the float of bytes ABCD would be stored in BADC order.
     memory.storeWord_ofObject_withValue(0, objectPointer, uint32 & 0xffff);
     memory.storeWord_ofObject_withValue(1, objectPointer, uint32 >> 16);
-
     push(objectPointer);
 }
 

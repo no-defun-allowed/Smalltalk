@@ -188,22 +188,19 @@ int main(int argc, const char * argv[]) {
             }
             else if (class == Float)
             {
-                uint8_t temp[4];
-                uint8_t *bytes = (uint8_t *) &word_object_memory[location+2];
-                printf("Float %f\n", * (float *) bytes);
-                temp[0] = bytes[3];
-                temp[1] = bytes[2];
-                temp[2] = bytes[1];
-                temp[3] = bytes[0];
-                
-                bytes[0] = temp[0];
-                bytes[1] = temp[1];
-                bytes[2] = temp[2];
-                bytes[3] = temp[3];
-                
-                
-                
-
+              uint8_t temp[4];
+              uint8_t *bytes = (uint8_t *) &word_object_memory[location+2];
+              printf("Float %f\n", * (float *) bytes);
+              // Swap the bytes around.
+              temp[0] = bytes[1];
+              temp[1] = bytes[0];
+              temp[2] = bytes[3];
+              temp[3] = bytes[2];
+              
+              bytes[0] = temp[0];
+              bytes[1] = temp[1];
+              bytes[2] = temp[2];
+              bytes[3] = temp[3];
             }
             else if (ptr || class == DisplayBitmap || class == WordArrayClass || class == ArrayClass)
             {
